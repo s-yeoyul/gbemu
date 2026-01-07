@@ -10,10 +10,9 @@ cmake --build build -j
 
 ## Run
 ```bash
-cd build/
-./gbemu
+./bulid/gbemu
 ```
-
+Do not execute binary in `build/` directroy. 
 ## Notes
 ROM / Boot ROM are not included in this project.
 

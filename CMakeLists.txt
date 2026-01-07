@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(gbemu
 	src/main.cpp
 	src/bus.cpp
+	src/cpu.cpp
  )
 
 target_include_directories(gbemu PRIVATE include)

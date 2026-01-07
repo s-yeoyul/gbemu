@@ -16,8 +16,10 @@ namespace gb {
 	private:
 		bool bootrom_enabled = false;
 		std::array<u8, 0x100> bootrom_{};
-		std::array<u8, 0x2000> wram_{};
-		std::array<u8, 0x7F> hram_{};
+		std::array<u8, 0x2000> vram_{}; // 0x8000 ~ 0x9FFF
+		std::array<u8, 0x2000> wram_{}; // 0xC000 ~ 0xDFFF
+		std::array<u8, 0x80> ioregs_{}; // 0xFF00 ~ 0xFF7F
+		std::array<u8, 0x7F> hram_{};   // 0xFF80 ~ 0xFFFE
 	};
 } // gb
 

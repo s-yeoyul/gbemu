@@ -1,26 +1,27 @@
 #include "gb/types.hpp"
 
-struct Registers {
-	unsigned char A;
-	unsigned char B;
-	unsigned char C;
-	unsigned char D;
-	unsigned char E;
-	unsigned char F;
-	unsigned char G;
-	unsigned char H;
-};
-
-struct Flags {
-	unsigned char Z;
-	unsigned char N;
-	unsigned char H;
-	unsigned char C;
-	bool HALT;
-};
-
 namespace gb {
+	class Bus;
+
+	struct Registers {
+		u8 a{}, b{}, c{}, d{}, e{}, f{}, h{}, l{};
+		u16 pc{}, sp{};
+	};
+
+	struct Flags {
+		bool z{}, n{}, h{}, c{};
+	};
+
 	class CPU {
 		public:
+			explicit CPU(Bus& bus);
+			void reset();
+			int step();
+		private:
+			Bus& bus_;
+			Registers regs;
+			Flags flags;
+			bool halted_ = false;
+			bool ime_ = false;
 	};
 }
