@@ -29,9 +29,11 @@ namespace gb {
 
 	int CPU::step() {
 		if(halted_) return 4; // HALT
+													
+		// if(regs.pc > 0x8000) exit(0);
 
 		u8 opcode = bus_.read8(regs.pc);
-		std::cout << "current opcode=0x" << std::hex << (int)opcode << ", pc=0x" << (int)regs.pc << std::endl;
+		// std::cout << "current opcode=0x" << std::hex << (int)opcode << ", pc=0x" << (int)regs.pc << std::endl;
 		regs.pc++;
 
 		if((opcode & 0xC0) == 0x40) { // LD r8, r8; 0x40 ~ 0x7F
@@ -478,6 +480,30 @@ namespace gb {
 					flags.c = hi;
 					return 4;
 				}
+			case 0x08: // LD [a16], SP
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = addr_lo | (static_cast<u16>(addr_hi) << 8);
+					u8 sp_hi = static_cast<u8>(regs.sp >> 8);
+					u8 sp_lo = regs.sp & 0x00FF;
+					bus_.write8(addr, sp_lo);
+					bus_.write8(addr + 1, sp_hi);
+					return 20;
+				}
+			case 0x09: // ADD HL, BC
+				{
+					u16 bc = static_cast<u16>(regs.c) | (static_cast<u16>(regs.b) << 8);
+					u16 hl = static_cast<u16>(regs.l) | (static_cast<u16>(regs.h) << 8);
+					u32 tmp = hl + bc;
+					flags.n = 0;
+					flags.h = ((hl & 0x0FFF) + (bc & 0x0FFF) > 0x0FFF) ? 1 : 0;
+					flags.c = (tmp > 0xFFFF) ? 1 : 0;
+					hl = static_cast<u16>(tmp & 0xFFFF);
+					regs.h = static_cast<u8>(hl >> 8);
+					regs.l = static_cast<u8>(hl & 0x00FF);
+					return 8;
+				}
 			case 0x0A: // LD A, [BC]
 				{
 					u16 bc = (static_cast<u16>(regs.b) << 8) | regs.c;
@@ -515,6 +541,14 @@ namespace gb {
 					u8 imm = bus_.read8(regs.pc++);
 					regs.c = imm;
 					return 8;
+				}
+			case 0x0F: // RRCA
+				{
+					u8 lo = (regs.a & 0x01);
+					regs.a = (regs.a >> 1) | (lo << 7);
+					flags.z = flags.n = flags.h = 0;
+					flags.c = (lo == 1) ? 1 : 0;
+					return 4;
 				}
 			case 0x11: // LD DE, n16
 				{
@@ -576,6 +610,19 @@ namespace gb {
 					regs.pc += offset;
 					return 12;
 				}
+			case 0x19: // ADD HL, DE
+				{
+					u16 de = static_cast<u16>(regs.e) | (static_cast<u16>(regs.d) << 8);
+					u16 hl = static_cast<u16>(regs.l) | (static_cast<u16>(regs.h) << 8);
+					u32 tmp = hl + de;
+					flags.n = 0;
+					flags.h = ((hl & 0x0FFF) + (de & 0x0FFF) > 0x0FFF) ? 1 : 0;
+					flags.c = (tmp > 0xFFFF) ? 1 : 0;
+					hl = static_cast<u16>(tmp & 0xFFFF);
+					regs.h = static_cast<u8>(hl >> 8);
+					regs.l = static_cast<u8>(hl & 0x00FF);
+					return 8;
+				}
 			case 0x1A: // LD A, [DE]
 				{
 					u16 de = (static_cast<u16>(regs.d) << 8) | regs.e;
@@ -613,6 +660,15 @@ namespace gb {
 					u8 imm = bus_.read8(regs.pc++);
 					regs.e = imm;
 					return 8;
+				}
+			case 0x1F: // RRA
+				{
+					u8 lo = (regs.a & 0x01);
+					u8 carry = static_cast<u8>(flags.c);
+					regs.a = (regs.a >> 1) | (carry << 7);
+					flags.z = flags.n = flags.h = 0;
+					flags.c = (lo == 1) ? 1 : 0;
+					return 4;
 				}
 			case 0x20: // JR NZ, e8
 				{
@@ -672,6 +728,26 @@ namespace gb {
 					regs.h = imm;
 					return 8;
 				}
+			case 0x27: // DAA
+				{
+					u8 adj = 0;
+					if(!flags.n) {
+						if(flags.h || ((regs.a & 0xF) > 0x9)) adj += 0x6;
+						if(flags.c || (regs.a > 0x99)) {
+							adj += 0x60;
+							flags.c = 1;
+						}
+						regs.a += adj;
+					}
+					else {
+						if(flags.h) adj += 0x6;
+						if(flags.c) adj += 0x60;
+						regs.a -= adj;
+					}
+					flags.z = (regs.a == 0) ? 1 : 0;
+					flags.h = 0;
+					return 4;
+				}
 			case 0x28: // JR Z, e8
 				{
 					int8_t offset = static_cast<int8_t>(bus_.read8(regs.pc++));
@@ -679,6 +755,18 @@ namespace gb {
 						regs.pc += offset;
 						return 12;
 					}
+					return 8;
+				}
+			case 0x29: // ADD HL, HL
+				{
+					u16 hl = static_cast<u16>(regs.l) | (static_cast<u16>(regs.h) << 8);
+					u32 tmp = hl + hl;
+					flags.n = 0;
+					flags.h = ((hl & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF) ? 1 : 0;
+					flags.c = (tmp > 0xFFFF) ? 1 : 0;
+					hl = static_cast<u16>(tmp & 0xFFFF);
+					regs.h = static_cast<u8>(hl >> 8);
+					regs.l = static_cast<u8>(hl & 0x00FF);
 					return 8;
 				}
 			case 0x2A: // LD A, [HL+]
@@ -720,6 +808,12 @@ namespace gb {
 					u8 imm = bus_.read8(regs.pc++);
 					regs.l = imm;
 					return 8;
+				}
+			case 0x2F: // CPL
+				{
+					regs.a = ~regs.a;
+					flags.n = flags.h = 1;
+					return 4;
 				}
 			case 0x30: // JR NC, e8
 				{
@@ -778,6 +872,13 @@ namespace gb {
 					bus_.write8(hl, imm);
 					return 12;
 				}
+			case 0x37: // SCF
+				{
+					flags.c = 1;
+					flags.n = 0;
+					flags.h = 0;
+					return 4;
+				}
 			case 0x38: // JR C, e8
 				{
 					int8_t offset = static_cast<int8_t>(bus_.read8(regs.pc++));
@@ -785,6 +886,18 @@ namespace gb {
 						regs.pc += offset;
 						return 12;
 					}
+					return 8;
+				}
+			case 0x39: // ADD HL, SP
+				{
+					u16 hl = static_cast<u16>(regs.l) | (static_cast<u16>(regs.h) << 8);
+					u32 tmp = hl + regs.sp;
+					flags.n = 0;
+					flags.h = ((hl & 0x0FFF) + (regs.sp & 0x0FFF) > 0x0FFF) ? 1 : 0;
+					flags.c = (tmp > 0xFFFF) ? 1 : 0;
+					hl = static_cast<u16>(tmp & 0xFFFF);
+					regs.h = static_cast<u8>(hl >> 8);
+					regs.l = static_cast<u8>(hl & 0x00FF);
 					return 8;
 				}
 			case 0x3A: // LD A, [HL-]
@@ -824,12 +937,66 @@ namespace gb {
 					regs.a = imm;
 					return 8;
 				}
+			case 0x3F: // CCF
+				{
+					flags.c = !flags.c;
+					flags.n = flags.h = 0;
+					return 4;
+				}
+			case 0xC0: // RET NZ
+				{
+					if(!flags.z) {
+						u8 pc_lo = bus_.read8(regs.sp++);
+						u8 pc_hi = bus_.read8(regs.sp++);
+						u16 pc = static_cast<u16>(pc_lo) | (static_cast<u16>(pc_hi) << 8);
+
+						regs.pc = pc;
+						return 20;
+					}
+					return 8;
+				}
 			case 0xC1: // POP BC
 				{
 					u8 c = bus_.read8(regs.sp++);
 					u8 b = bus_.read8(regs.sp++);
 					regs.c = c;
 					regs.b = b;
+					return 12;
+				}
+			case 0xC2: // JP NZ, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = static_cast<u16>(addr_lo) | (static_cast<u16>(addr_hi) << 8);
+					if(!flags.z) {
+						regs.pc = addr;
+						return 16;
+					}
+					return 12;
+				}
+			case 0xC3: // JP a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = static_cast<u16>(addr_lo) | (static_cast<u16>(addr_hi) << 8);
+					regs.pc = addr;
+					return 16;
+				}
+			case 0xC4: // CALL NZ, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = static_cast<u16>(addr_lo) | (static_cast<u16>(addr_hi) << 8);
+
+					if(!flags.z) {
+						u8 pc_lo = static_cast<u8>(regs.pc & 0xFF);
+						u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+						bus_.write8(--regs.sp, pc_hi);
+						bus_.write8(--regs.sp, pc_lo);
+
+						regs.pc = addr;
+						return 24;
+					}
 					return 12;
 				}
 			case 0xC5: // PUSH BC
@@ -849,6 +1016,17 @@ namespace gb {
 					regs.a = static_cast<u8>(tmp & 0xFF);
 					return 8;
 				}
+			case 0xC7: // RST $00
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0000;
+
+					return 16;
+				}
 			case 0xC8: // RET Z
 				{
 					if(flags.z) {
@@ -865,6 +1043,34 @@ namespace gb {
 					u8 pc_hi = bus_.read8(regs.sp++);
 					regs.pc = (static_cast<u16>(pc_hi) << 8) | static_cast<u16>(pc_lo);
 					return 16;
+				}
+			case 0xCA: // JP Z, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = addr_lo | (static_cast<u16>(addr_hi) << 8);
+					if(flags.z) {
+						regs.pc = addr;
+						return 16;
+					}
+					return 12;
+				}
+			case 0xCC: // CALL Z, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = addr_lo | (static_cast<u16>(addr_hi) << 8);
+
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					if(flags.z) {
+						bus_.write8(--regs.sp, pc_hi);
+						bus_.write8(--regs.sp, pc_lo);
+						regs.pc = addr;
+						return 24;
+					}
+					return 12;
 				}
 			case 0xCD: // CALL a16
 				{
@@ -892,12 +1098,63 @@ namespace gb {
 					regs.a = static_cast<u8>(tmp & 0xFF);
 					return 8;
 				}
+			case 0xCF: // RST $08
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0008;
+
+					return 16;
+				}
+			case 0xD0: // RET NC
+				{
+					if(!flags.c) {
+						u8 pc_lo = bus_.read8(regs.sp++);
+						u8 pc_hi = bus_.read8(regs.sp++);
+						u16 pc = static_cast<u16>(pc_lo) | (static_cast<u16>(pc_hi) << 8);
+
+						regs.pc = pc;
+						return 20;
+					}
+					return 8;
+				}
 			case 0xD1: // POP DE
 				{
 					u8 e = bus_.read8(regs.sp++);
 					u8 d = bus_.read8(regs.sp++);
 					regs.e = e;
 					regs.d = d;
+					return 12;
+				}
+			case 0xD2: // JP NC, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = static_cast<u16>(addr_lo) | (static_cast<u16>(addr_hi) << 8);
+					if(!flags.c) {
+						regs.pc = addr;
+						return 16;
+					}
+					return 12;
+				}
+			case 0xD4: // CALL NC, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = static_cast<u16>(addr_lo) | (static_cast<u16>(addr_hi) << 8);
+
+					if(!flags.c) {
+						u8 pc_lo = static_cast<u8>(regs.pc & 0xFF);
+						u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+						bus_.write8(--regs.sp, pc_hi);
+						bus_.write8(--regs.sp, pc_lo);
+
+						regs.pc = addr;
+						return 24;
+					}
 					return 12;
 				}
 			case 0xD5: // PUSH DE
@@ -917,6 +1174,17 @@ namespace gb {
 					regs.a = tmp;
 					return 8;
 				}
+			case 0xD7: // RST $10
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0010;
+
+					return 16;
+				}
 			case 0xD8: // RET C
 				{
 					if(flags.c) {
@@ -935,6 +1203,34 @@ namespace gb {
 					regs.pc = (static_cast<u16>(pc_hi) << 8) | static_cast<u16>(pc_lo);
 					return 16;
 				}
+			case 0xDA: // JP C, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = addr_lo | (static_cast<u16>(addr_hi) << 8);
+					if(flags.c) {
+						regs.pc = addr;
+						return 16;
+					}
+					return 12;
+				}
+			case 0xDC: // CALL C, a16
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = addr_lo | (static_cast<u16>(addr_hi) << 8);
+
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					if(flags.c) {
+						bus_.write8(--regs.sp, pc_hi);
+						bus_.write8(--regs.sp, pc_lo);
+						regs.pc = addr;
+						return 24;
+					}
+					return 12;
+				}
 			case 0xDE: // SBC A, n8
 				{
 					u8 imm = bus_.read8(regs.pc++);
@@ -946,6 +1242,17 @@ namespace gb {
 					flags.c = (regs.a < (imm + carry)) ? 1 : 0;
 					regs.a = tmp;
 					return 8;
+				}
+			case 0xDF: // RST $18
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0018;
+
+					return 16;
 				}
 			case 0xE1: // POP HL
 				{
@@ -983,6 +1290,42 @@ namespace gb {
 					flags.c = 0;
 					return 8;
 				}
+			case 0xE7: // RST $20
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0020;
+
+					return 16;
+				}
+			case 0xE8: // ADD SP, e8
+				{
+					s8 offset = static_cast<s8>(bus_.read8(regs.pc++));
+					u16 temp = regs.sp + offset;
+					flags.z = flags.n = 0;
+					u8 imm = static_cast<u8>(offset);
+					flags.h = (((regs.sp & 0xF) + (imm & 0xF)) > 0xF);
+					flags.c = (((regs.sp & 0xFF) + imm) > 0xFF);
+					regs.sp = temp;
+					return 16;
+				}
+			case 0xE9: // JP HL
+				{
+					u16 hl = static_cast<u16>(regs.l) | (static_cast<u16>(regs.h) << 8);
+					regs.pc = hl;
+					return 4;
+				}
+			case 0xEA: // LD [a16], A
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = static_cast<u16>(addr_lo) | (static_cast<u16>(addr_hi) << 8);
+					bus_.write8(addr, regs.a);
+					return 16;
+				}
 			case 0xEE: // XOR A, n8
 				{
 					u8 imm = bus_.read8(regs.pc++);
@@ -990,6 +1333,17 @@ namespace gb {
 					flags.z = (regs.a == 0) ? 1 : 0;
 					flags.n = flags.h = flags.c = 0;
 					return 8;
+				}
+			case 0xEF: // RST $28
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0028;
+
+					return 16;
 				}
 			case 0xF0: // LDH A, [a8]
 				{
@@ -1014,6 +1368,11 @@ namespace gb {
 					regs.a = bus_.read8(addr);
 					return 8;
 				}
+			case 0xF3: // DI
+				{
+					ime_ = false;
+					return 4;
+				}
 			case 0xF5: // PUSH AF
 				{
 					bus_.write8(--regs.sp, regs.a);
@@ -1032,6 +1391,49 @@ namespace gb {
 					flags.n = flags.h = flags.c = 0;
 					return 8;
 				}
+			case 0xF7: // RST $30
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0030;
+
+					return 16;
+				}
+			case 0xF8: // LD HL, SP + e8
+				{
+					s8 offset = static_cast<s8>(bus_.read8(regs.pc++));
+					u16 temp = regs.sp + offset;
+					regs.h = static_cast<u8>(temp >> 8);
+					regs.l = static_cast<u8>(temp & 0x00FF);
+					flags.z = flags.n = 0;
+					u8 imm = static_cast<u8>(offset);
+					flags.h = (((regs.sp & 0xF) + (imm & 0xF)) > 0xF);
+					flags.c = (((regs.sp & 0xFF) + imm) > 0xFF);
+					return 12;
+				}
+			case 0xF9: // LD SP, HL
+				{
+					u16 hl = regs.l | (static_cast<u16>(regs.h) << 8);
+					regs.sp = hl;
+					return 8;
+				}
+			case 0xFA: // LD A, [a16]
+				{
+					u8 addr_lo = bus_.read8(regs.pc++);
+					u8 addr_hi = bus_.read8(regs.pc++);
+					u16 addr = static_cast<u16>(addr_lo) | (static_cast<u16>(addr_hi) << 8);
+					
+					regs.a = bus_.read8(addr);
+					return 16;
+				}
+			case 0xFB: // EI
+				{
+					ime_ = true;
+					return 4;
+				}
 			case 0xFE: // CP A, n8
 				{
 					u8 imm = bus_.read8(regs.pc++);
@@ -1041,6 +1443,17 @@ namespace gb {
 					flags.h = ((regs.a & 0xF) < (imm & 0xF)) ? 1 : 0;
 					flags.c = (regs.a < imm) ? 1 : 0;
 					return 8;
+				}
+			case 0xFF: // RST $38
+				{
+					u8 pc_lo = (regs.pc & 0xFF);
+					u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+
+					bus_.write8(--regs.sp, pc_hi);
+					bus_.write8(--regs.sp, pc_lo);
+					regs.pc = 0x0038;
+
+					return 16;
 				}
 			default:
 				std::cout << "unimplemented opcode detected @pc=" << regs.pc << ", opcode=0x" << std::hex << static_cast<int>(opcode) << std::endl;
