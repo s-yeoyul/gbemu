@@ -26,12 +26,70 @@ namespace gb {
 
 		halted_ = false;
 	}
+  void CPU::isr_vec(u8 intr_num, u16 vec) {
+    // 1. De-assert IME, IF
+    ime_ = false;
+    bus_.write8(0xFF0F, (bus_.read8(0xFF0F) & (~intr_num)));
+
+    // 2. Push current PC to Stack
+    u8 pc_lo = (regs.pc & 0xFF);
+    u8 pc_hi = static_cast<u8>(regs.pc >> 8);
+    bus_.write8(--regs.sp, pc_hi);
+    bus_.write8(--regs.sp, pc_lo);
+
+    // 3. Jump to $vec
+    regs.pc = vec;
+
+    // 4. Return
+    return;
+  }
+  int CPU::isr_handler() {
+    if(!ime_) return 0;
+
+    u8 intr_enable = bus_.read8(0xFFFF);
+    u8 intr_flag = bus_.read8(0xFF0F);
+
+    // 1. VBlank interrupt handler
+    if((intr_enable & 0x01) == 0x01 && (intr_flag & 0x01) == 0x01) {
+      isr_vec(0x01, 0x0040);
+      return 20;
+    }
+
+    // 2. LCD interrupt handler
+    if((intr_enable & 0x02) == 0x02 && (intr_flag & 0x02) == 0x02) {
+      isr_vec(0x02, 0x0048);
+      return 20;
+    }
+
+    // 3. Timer interrupt handler
+    if((intr_enable & 0x04) == 0x04 && (intr_flag & 0x04) == 0x04) {
+      isr_vec(0x04, 0x0050);
+      return 20;
+    }
+
+    // 4. Serial interrupt handler
+    if((intr_enable & 0x08) == 0x08 && (intr_flag & 0x08) == 0x08) {
+      isr_vec(0x08, 0x0058);
+      return 20;
+    }
+
+    // 5. Joypad interrupt handler
+    if((intr_enable & 0x10) == 0x10 && (intr_flag & 0x10) == 0x10) {
+      isr_vec(0x10, 0x0060);
+      return 20;
+    }
+    return 0;
+  }
 
 	int CPU::step() {
-		if(halted_) return 4; // HALT
-													
-		// if(regs.pc > 0x8000) exit(0);
+    // 1. Check pending interrupt
+    int intr_res = isr_handler();
+    if(intr_res == 20) return 20;
 
+    // 2. Check whether CPU is halted
+		if(halted_) return 4; // HALT
+
+    // 3. Execute instructions
 		u8 opcode = bus_.read8(regs.pc);
 		// std::cout << "current opcode=0x" << std::hex << (int)opcode << ", pc=0x" << (int)regs.pc << std::endl;
 		regs.pc++;
