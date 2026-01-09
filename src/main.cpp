@@ -2,11 +2,16 @@
 
 #include "gb/bus.hpp"
 #include "gb/cpu.hpp"
+#include "gb/timer.hpp"
 
 #include <filesystem>
 
 int main() {
-	gb::Bus bus;
+	gb::Timer timer;
+	gb::Bus bus(timer);
+	gb::CPU cpu(bus);
+	cpu.reset();
+
 	if(!bus.load_bootrom("roms/bootix_dmg.bin")) {
 		std::cout << "load failed\n";
 		return 0;
@@ -19,11 +24,11 @@ int main() {
 	} */
 
 
-	/* Test Rom 2 */
+	/* Test Rom 2
 	if(!bus.load_cartridge("roms/02-interrupts.gb")) {
 		std::cout << "load failed\n";
 		return 0;
-	}
+	} */
 
 	/* Test Rom 3
 	if(!bus.load_cartridge("roms/03-op sp,hl.gb")) {
@@ -79,10 +84,16 @@ int main() {
 		return 0;
 	} */
 
-	gb::CPU cpu(bus);
-	cpu.reset();
+	/* Test Rom: instr_timing.gb */
+	if(!bus.load_cartridge("roms/instr_timing.gb")) {
+		std::cout << "load failed\n";
+		return 0;
+	}
+
 	while(1) {
 		int cycles = cpu.step();
+		bus.tick(cycles);
+		// NOTE: This is temporary solution
 		if(cycles == 0) break;
 	}
 	return 0;

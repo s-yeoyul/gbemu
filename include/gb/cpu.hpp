@@ -17,11 +17,15 @@ namespace gb {
 			explicit CPU(Bus& bus);
 			void reset();
 			int step();
+      void isr_vec(u8 intr_num, u16 vec);
+      int isr_handler();
 		private:
 			Bus& bus_;
 			Registers regs;
 			Flags flags;
 			bool halted_ = false;
 			bool ime_ = false;
+			bool pass_handler = false;
+			bool halt_bug = false;
 	};
 }
