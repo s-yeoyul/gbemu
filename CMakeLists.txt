@@ -8,6 +8,7 @@ add_executable(gbemu
 	src/main.cpp
 	src/bus.cpp
 	src/cpu.cpp
+	src/timer.cpp
  )
 
 target_include_directories(gbemu PRIVATE include)

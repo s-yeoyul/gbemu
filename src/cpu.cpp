@@ -44,10 +44,16 @@ namespace gb {
     return;
   }
   int CPU::isr_handler() {
-    if(!ime_) return 0;
-
     u8 intr_enable = bus_.read8(0xFFFF);
     u8 intr_flag = bus_.read8(0xFF0F);
+
+		// If pending interrupt exists
+		if((intr_flag & intr_enable) != 0) {
+			if(halted_) halted_ = false;
+		}
+
+		// If IME is de-asserted, do not handle interrupt
+    if(!ime_) return 0;
 
     // 1. VBlank interrupt handler
     if((intr_enable & 0x01) == 0x01 && (intr_flag & 0x01) == 0x01) {
@@ -83,20 +89,39 @@ namespace gb {
 
 	int CPU::step() {
     // 1. Check pending interrupt
-    int intr_res = isr_handler();
-    if(intr_res == 20) return 20;
+		int intr_res = isr_handler();
+		if(intr_res == 20) return 20;
 
     // 2. Check whether CPU is halted
 		if(halted_) return 4; // HALT
 
     // 3. Execute instructions
 		u8 opcode = bus_.read8(regs.pc);
-		// std::cout << "current opcode=0x" << std::hex << (int)opcode << ", pc=0x" << (int)regs.pc << std::endl;
-		regs.pc++;
+		if(!halt_bug) regs.pc++;
+		else halt_bug = false;
+
+		//std::cout << "current opcode=0x" << std::hex << (int)opcode << ", pc=0x" << (int)regs.pc << std::endl;
 
 		if((opcode & 0xC0) == 0x40) { // LD r8, r8; 0x40 ~ 0x7F
 			if(opcode == 0x76) { // HALT
-				halted_ = true;
+				if(ime_) {
+					// Enter IDLE mode
+					halted_ = true;
+				}
+				else {
+					u8 intr_flags = bus_.read8(0xFF0F);
+					u8 intr_enable = bus_.read8(0xFFFF);
+
+					// Case 1: No pending interrupts
+					if((intr_flags & intr_enable) == 0) {
+						halted_ = true;
+					}
+					// Case 2: Pending interrupts exist
+					else {
+						halt_bug = true;
+						halted_ = false;
+					}
+				}
 				return 4;
 			}
 			u8 src = opcode & 0x07;

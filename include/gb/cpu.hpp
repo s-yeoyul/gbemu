@@ -25,5 +25,7 @@ namespace gb {
 			Flags flags;
 			bool halted_ = false;
 			bool ime_ = false;
+			bool pass_handler = false;
+			bool halt_bug = false;
 	};
 }

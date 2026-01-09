@@ -2,11 +2,16 @@
 
 #include "gb/bus.hpp"
 #include "gb/cpu.hpp"
+#include "gb/timer.hpp"
 
 #include <filesystem>
 
 int main() {
-	gb::Bus bus;
+	gb::Timer timer;
+	gb::Bus bus(timer);
+	gb::CPU cpu(bus);
+	cpu.reset();
+
 	if(!bus.load_bootrom("roms/bootix_dmg.bin")) {
 		std::cout << "load failed\n";
 		return 0;
@@ -79,10 +84,10 @@ int main() {
 		return 0;
 	} */
 
-	gb::CPU cpu(bus);
-	cpu.reset();
 	while(1) {
 		int cycles = cpu.step();
+		bus.tick(cycles);
+		// NOTE: This is temporary solution
 		if(cycles == 0) break;
 	}
 	return 0;
