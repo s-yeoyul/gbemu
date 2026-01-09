@@ -24,11 +24,11 @@ int main() {
 	} */
 
 
-	/* Test Rom 2 */
+	/* Test Rom 2
 	if(!bus.load_cartridge("roms/02-interrupts.gb")) {
 		std::cout << "load failed\n";
 		return 0;
-	}
+	} */
 
 	/* Test Rom 3
 	if(!bus.load_cartridge("roms/03-op sp,hl.gb")) {
@@ -83,6 +83,12 @@ int main() {
 		std::cout << "load failed\n";
 		return 0;
 	} */
+
+	/* Test Rom: instr_timing.gb */
+	if(!bus.load_cartridge("roms/instr_timing.gb")) {
+		std::cout << "load failed\n";
+		return 0;
+	}
 
 	while(1) {
 		int cycles = cpu.step();
