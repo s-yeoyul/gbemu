@@ -1,16 +1,27 @@
 #include <iostream>
+#include <chrono>
+#include <thread>
 
 #include "gb/bus.hpp"
 #include "gb/cpu.hpp"
 #include "gb/timer.hpp"
+#include "gb/ppu.hpp"
 
-#include <filesystem>
+const int CYCLES_PER_FRAME = 70224;
+const double FPS = 59.7275;
+using my_clock = std::chrono::steady_clock;
+const auto frame_dt =
+		std::chrono::duration_cast<my_clock::duration>(
+				std::chrono::duration<double>(1.0 / FPS));
+
 
 int main() {
 	gb::Timer timer;
-	gb::Bus bus(timer);
+	gb::PPU ppu;
+	gb::Bus bus(timer, ppu);
 	gb::CPU cpu(bus);
 	cpu.reset();
+	ppu.initPPU();
 
 	if(!bus.load_bootrom("roms/bootix_dmg.bin")) {
 		std::cout << "load failed\n";
@@ -84,17 +95,39 @@ int main() {
 		return 0;
 	} */
 
-	/* Test Rom: instr_timing.gb */
+	/* Test Rom: instr_timing.gb
 	if(!bus.load_cartridge("roms/instr_timing.gb")) {
+		std::cout << "load failed\n";
+		return 0;
+	} */
+
+	/* Game 1: Dr. Mario */
+	if(!bus.load_cartridge("roms/Dr. mario.gb")) {
 		std::cout << "load failed\n";
 		return 0;
 	}
 
-	while(1) {
+	auto next_frame = my_clock::now();
+	while(ppu.pump_events()) {
+		int budget = CYCLES_PER_FRAME;
+		while(budget > 0) {
+			int cycles = cpu.step();
+			bus.tick(cycles);
+			budget -= cycles;
+			if(cycles == 0) return 0;
+		}
+    next_frame += frame_dt;
+    std::this_thread::sleep_until(next_frame);
+
+    auto now = my_clock::now();
+    if (now > next_frame + frame_dt) next_frame = now;
+
+		/*
 		int cycles = cpu.step();
 		bus.tick(cycles);
 		// NOTE: This is temporary solution
 		if(cycles == 0) break;
+		*/
 	}
 	return 0;
 }
