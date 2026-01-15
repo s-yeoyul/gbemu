@@ -1,5 +1,7 @@
 #include "gb/types.hpp"
+#include "gb/joypad.hpp"
 #include "SDL2/SDL.h"
+
 #include <array>
 
 namespace gb {
@@ -13,7 +15,7 @@ namespace gb {
 		public:
 			void initPPU();
 			void present();
-			bool pump_events();
+			bool pump_events(Joypad& joypad);
 			void shutdownPPU();
 			void renderTestPattern(u32 frame);
 			u8 tick(int cycles);
@@ -22,8 +24,6 @@ namespace gb {
 			
 			void oam_search();
 			void pixel_transfer();
-
-			std::array<u8, 160 * 144 * 4> framebuffer_{};
 		private:
 			SDL_Renderer* renderer_;
 			SDL_Window* window_;
@@ -31,6 +31,7 @@ namespace gb {
 
 			int dot_cycles = 0;
 			int mode = 2;
+			int sprites_num = 0;
 
 			// RAM
 			std::array<u8, 0x2000> vram_{}; // 0x8000 ~ 0x9FFF
@@ -47,6 +48,7 @@ namespace gb {
 			u8 obp0_ = 0; u8 obp1_ = 0;
 			u8 wy_ = 0; u8 wx_ = 0;
 
+			std::array<u8, 160 * 144 * 4> framebuffer_{};
 			std::array<Sprites, 10> ly_sprites_{};
 	};
 } // namespace gb

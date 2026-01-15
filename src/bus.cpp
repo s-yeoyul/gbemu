@@ -6,7 +6,7 @@
 #include <iostream>
 
 namespace gb {
-	Bus::Bus(Timer &timer, PPU &ppu) : timer_(timer), ppu_(ppu) {}
+	Bus::Bus(Timer &timer, PPU &ppu, Joypad &joypad) : timer_(timer), ppu_(ppu), joypad_(joypad) {}
 
 	u8 Bus::read8(u16 addr) const {
 		// Hooking to Timer class
@@ -14,6 +14,9 @@ namespace gb {
 
 		// Hooking to PPU class
 		if(addr >= 0xFF40 && addr <= 0xFF4B) return ppu_.read8(addr);
+
+		// Hooking to Joypad class
+		if(addr == 0xFF00) return joypad_.read8(addr);
 	
 		// Memory access
 		if(bootrom_enabled && addr < 0x100) return bootrom_[addr];
@@ -26,11 +29,12 @@ namespace gb {
 			else if(addr >= 0xFF80 && addr < 0xFFFF) return hram_[addr-0xFF80];
 			else if(addr == 0xFFFF) return intr_reg;
 			else {
-				std::cout << "invalid addr @0x" << std::hex << addr << "\n";
+				//std::cout << "invalid addr @0x" << std::hex << addr << "\n";
 				return 0xFF; // return -1
 			}
 		}
 	}
+
 	void Bus::write8(u16 addr, u8 value) {
 		/* NOTE: It is temporary solution */
 		if(addr == 0xFF50) {
@@ -46,6 +50,17 @@ namespace gb {
 		// Hooking to PPU class
 		if(addr >= 0xFF40 && addr <= 0xFF4B) {
 			ppu_.write8(addr, value);
+
+			// OAM DMA
+			if(addr == 0xFF46) {
+				oam_dma(value);
+			}
+			return;
+		}
+
+		// Hooking to Joypad class
+		if(addr == 0xFF00) {
+			joypad_.write8(addr, value);
 			return;
 		}
 
@@ -63,7 +78,7 @@ namespace gb {
 			else if(addr >= 0xFF80 && addr < 0xFFFF) hram_[addr-0xFF80] = value;
 			else if(addr == 0xFFFF) intr_reg = value;
 			else {
-				std::cout << "invalid addr@=0x" << std::hex << addr << std::endl;
+				//std::cout << "invalid addr@=0x" << std::hex << addr << std::endl;
 			}
 		}
 
@@ -85,8 +100,14 @@ namespace gb {
 		
 		// 2. PPU tick
 		u8 ppu_intr = ppu_.tick(cycles);
-		if(timer_intr != 0) {
+		if(ppu_intr != 0) {
 			ioregs_[0x0F] |= ppu_intr;
+		}
+
+		// 3. Joypad tick
+		bool joypad_intr = joypad_.tick();
+		if(joypad_intr) {
+			ioregs_[0x0F] |= 0x10;
 		}
 	}
 
@@ -118,5 +139,13 @@ namespace gb {
 		}
 		if(!ifs.read(reinterpret_cast<char*>(cartridge_.data()), size)) return false;
 		return true;
+	}
+
+	void Bus::oam_dma(u8 source) {
+		u16 base_addr = static_cast<u16>(source) << 8;
+		for(u16 i = 0; i < 0xA0; i++) {
+			u8 value = read8(base_addr + i);
+			write8(0xFE00 + i, value);
+		}
 	}
 }

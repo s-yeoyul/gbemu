@@ -7,10 +7,11 @@
 namespace gb {
 	class Timer;
 	class PPU;
+	class Joypad;
 
 	class Bus {
 		public:
-			explicit Bus(Timer &timer, PPU &ppu);
+			explicit Bus(Timer &timer, PPU &ppu, Joypad &joypad);
 
 			u8 read8(u16 addr) const;
 			void write8(u16 addr, u8 value);
@@ -22,9 +23,12 @@ namespace gb {
 			bool get_bootrom_enabled() { return bootrom_enabled; }
 
 			bool load_cartridge(const std::string &path);
+
+			void oam_dma(u8 source);
 		private:
 			Timer &timer_;
 			PPU &ppu_;
+			Joypad &joypad_;
 
 			bool bootrom_enabled = false;
 			std::array<u8, 0x100> bootrom_{};    // 0x0000 ~ 0x00FF

@@ -1,5 +1,7 @@
 #include "gb/ppu.hpp"
+#include "gb/joypad.hpp"
 #include "SDL2/SDL.h"
+
 #include <iostream>
 
 namespace gb {
@@ -47,11 +49,33 @@ namespace gb {
 		SDL_RenderPresent(renderer_);
 	}
 
-	bool PPU::pump_events() {
+	bool PPU::pump_events(Joypad& joypad) {
 		SDL_Event e;
-		while (SDL_PollEvent(&e)) {
-			if (e.type == SDL_QUIT) return false;
-			if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) return false;
+		while(SDL_PollEvent(&e)) {
+			if(e.type == SDL_QUIT) return false;
+			if(e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) return false;
+
+			if(e.type == SDL_KEYDOWN && e.key.repeat == 0) {
+				if(e.key.keysym.sym == SDLK_x) joypad.set_a(true);
+				if(e.key.keysym.sym == SDLK_z) joypad.set_b(true);
+				if(e.key.keysym.sym == SDLK_RETURN) joypad.set_start(true);
+				if(e.key.keysym.sym == SDLK_RSHIFT) joypad.set_select(true);
+				if(e.key.keysym.sym == SDLK_LEFT) joypad.set_left(true);
+				if(e.key.keysym.sym == SDLK_RIGHT) joypad.set_right(true);
+				if(e.key.keysym.sym == SDLK_UP) joypad.set_up(true);
+				if(e.key.keysym.sym == SDLK_DOWN) joypad.set_down(true);
+			}
+
+			if (e.type == SDL_KEYUP) {
+				if(e.key.keysym.sym == SDLK_x) joypad.set_a(false);
+				if(e.key.keysym.sym == SDLK_z) joypad.set_b(false);
+				if(e.key.keysym.sym == SDLK_RETURN) joypad.set_start(false);
+				if(e.key.keysym.sym == SDLK_RSHIFT) joypad.set_select(false);
+				if(e.key.keysym.sym == SDLK_LEFT) joypad.set_left(false);
+				if(e.key.keysym.sym == SDLK_RIGHT) joypad.set_right(false);
+				if(e.key.keysym.sym == SDLK_UP) joypad.set_up(false);
+				if(e.key.keysym.sym == SDLK_DOWN) joypad.set_down(false);
+			}
 		}
 		return true;
 	}	
@@ -125,7 +149,10 @@ namespace gb {
 
 	void PPU::write8(u16 addr, u8 value) {
 		if(addr >= 0x8000 && addr < 0xA000) vram_[addr-0x8000] = value;
-		else if(addr >= 0xFE00 && addr < 0xFEA0) oam_[addr-0xFE00]= value;
+		else if(addr >= 0xFE00 && addr < 0xFEA0) {
+			oam_[addr-0xFE00]= value;
+			//std::cout << "oam write @0x" << std::hex << (int)addr << ", value=@x" << (int)value << std::endl;
+		}
 
 		switch(addr) {
 			case 0xFF40: lcdc_ = value;
@@ -244,9 +271,13 @@ namespace gb {
 				}
 			}
 		}
+		sprites_num = 10 - max_obj;
 	}
 
 	void PPU::pixel_transfer() {
+		// Array for priority
+		std::array<u8, 160> color_bit_array{};
+
 		for(int i = 0; i < 160; i++) {
 			// 1. Calculate scrolled coordinate
 			u8 bg_x = (scx_ + i) & 0xFF;
@@ -278,6 +309,7 @@ namespace gb {
 			u8 shade = (bgp_ >> (color_bit * 2)) & 0x3;
 			u64 idx = (ly_ * 160 + i) << 2;
 			u8 color;
+			color_bit_array[i] = shade;
 
 			switch(shade) {
 				case 0x00: color = 0xFF; // white
@@ -295,6 +327,84 @@ namespace gb {
 			framebuffer_[idx + 1] = color; // G
 			framebuffer_[idx + 2] = color; // B
 			framebuffer_[idx + 3] = 0xFF;  // A
+		}
+
+		// 6. Sprite rendering
+		for(int i = 0; i < sprites_num; i++) {
+			int sprite_x = ly_sprites_[i].x - 8;
+			int sprite_y = ly_sprites_[i].y - 16;
+			u8 sprite_attr = ly_sprites_[i].attr;
+			u8 sprite_tileID = ly_sprites_[i].tile;
+			u8 sprite_height = ((lcdc_ & 0x04) == 0x04) ? 16 : 8;
+
+			for(int x = 0; x < 8; x++) {
+				if((sprite_x + x < 0) || (sprite_x + x >= 160)) continue;
+				if((ly_ < sprite_y) || (ly_ >= sprite_y + sprite_height)) continue;
+
+				// 6-1. Get tile data from tileID
+				u16 sprite_tile_addr;
+				if(sprite_height == 8) {
+					// Y flip
+					if((sprite_attr & 0x40) == 0x40) {
+						sprite_tile_addr = (sprite_tileID * 0x10) + ((sprite_y + 7 - ly_) << 1);
+					} else sprite_tile_addr = (sprite_tileID * 0x10) + ((ly_ - sprite_y) << 1); 
+				} 
+				else {
+					if((ly_ - sprite_y) < 8) {
+						// Y flip
+						if((sprite_attr & 0x40) == 0x40) {
+							sprite_tile_addr = (sprite_tileID | 0x01) * 0x10 + (((sprite_y + 15 - ly_) & 0x7) << 1);
+						} else sprite_tile_addr = (sprite_tileID & 0xFE) * 0x10 + ((ly_ - sprite_y) << 1);
+					} else {
+						// Y flip
+						if((sprite_attr & 0x40) == 0x40) {
+							sprite_tile_addr = (sprite_tileID & 0xFE) * 0x10 + (((sprite_y + 15 - ly_) & 0x7) << 1);
+						} else sprite_tile_addr = (sprite_tileID | 0x01) * 0x10 + (((ly_ - sprite_y) & 0x7) << 1);
+					}
+				}
+				u8 sprite_lo = vram_[sprite_tile_addr];
+				u8 sprite_hi = vram_[sprite_tile_addr + 1];
+				// 6-2. Select color bit from each tiledata
+				u8 sprite_bit = 0x7 - x;
+				u8 sprite_color_bit = ((sprite_lo & (1 << sprite_bit)) >> sprite_bit) | (((sprite_hi & (1 << sprite_bit)) >> sprite_bit) << 1);
+
+				if(sprite_color_bit == 0x00) continue;
+
+				// 6-3. Fill framebuffer according to palette
+				bool is_obp0 = ((sprite_attr & 0x10) == 0x10) ? false : true;
+				u8 sprite_shade;
+				if(is_obp0) {
+					sprite_shade = (obp0_ >> (sprite_color_bit * 2)) & 0x3;
+				} else {
+					sprite_shade = (obp1_ >> (sprite_color_bit * 2)) & 0x3;
+				}
+				u64 sprite_idx = (ly_ * 160 + sprite_x + x) << 2;
+				u8 sprite_color;
+				switch(sprite_shade) {
+					case 0x00: sprite_color = 0xFF; // white
+										 break;
+					case 0x01: sprite_color = 0xAA; // light gray
+										 break;
+					case 0x02: sprite_color = 0x55; // dark gray
+										 break;
+					case 0x03: sprite_color = 0x00; // black
+										 break;
+					default: sprite_color = 0xFF;
+				}
+
+				// 6-4. Adjust attribute
+				// 6-4-1. Priority check
+				if((sprite_attr & 0x80) != 0x80 || (color_bit_array[sprite_x + x] == 0x00)) {
+					// 6-4-2. X flip check
+					if((sprite_attr & 0x20) == 0x20) {
+						sprite_idx = (ly_ * 160 + sprite_x + (7 - x)) << 2;
+					}
+					framebuffer_[sprite_idx] = sprite_color;     // R
+					framebuffer_[sprite_idx + 1] = sprite_color; // G
+					framebuffer_[sprite_idx + 2] = sprite_color; // B
+					framebuffer_[sprite_idx + 3] = 0xFF; // A
+				}
+			}
 		}
 	}
 } // namespace gb

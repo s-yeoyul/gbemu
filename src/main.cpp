@@ -6,6 +6,7 @@
 #include "gb/cpu.hpp"
 #include "gb/timer.hpp"
 #include "gb/ppu.hpp"
+#include "gb/joypad.hpp"
 
 const int CYCLES_PER_FRAME = 70224;
 const double FPS = 59.7275;
@@ -18,7 +19,8 @@ const auto frame_dt =
 int main() {
 	gb::Timer timer;
 	gb::PPU ppu;
-	gb::Bus bus(timer, ppu);
+	gb::Joypad joypad;
+	gb::Bus bus(timer, ppu, joypad);
 	gb::CPU cpu(bus);
 	cpu.reset();
 	ppu.initPPU();
@@ -101,14 +103,22 @@ int main() {
 		return 0;
 	} */
 
-	/* Game 1: Dr. Mario */
+	/* Game 1: Dr. Mario
 	if(!bus.load_cartridge("roms/Dr. mario.gb")) {
+		std::cout << "load failed\n";
+		return 0;
+	} */
+
+	/* Game 2: Tetris */
+	if(!bus.load_cartridge("roms/Tetris.gb")) {
 		std::cout << "load failed\n";
 		return 0;
 	}
 
+
 	auto next_frame = my_clock::now();
-	while(ppu.pump_events()) {
+
+	while(ppu.pump_events(joypad)) {
 		int budget = CYCLES_PER_FRAME;
 		while(budget > 0) {
 			int cycles = cpu.step();
@@ -121,13 +131,6 @@ int main() {
 
     auto now = my_clock::now();
     if (now > next_frame + frame_dt) next_frame = now;
-
-		/*
-		int cycles = cpu.step();
-		bus.tick(cycles);
-		// NOTE: This is temporary solution
-		if(cycles == 0) break;
-		*/
 	}
 	return 0;
 }

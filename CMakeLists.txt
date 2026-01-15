@@ -10,6 +10,7 @@ add_executable(gbemu
 	src/cpu.cpp
 	src/timer.cpp
 	src/ppu.cpp
+	src/joypad.cpp
  )
 
 target_include_directories(gbemu PRIVATE include)
