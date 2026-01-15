@@ -100,6 +100,7 @@ namespace gb {
 		if(!halt_bug) regs.pc++;
 		else halt_bug = false;
 
+		if(regs.pc == 0x01c0) std::cout << "success\n";
 		//std::cout << "current opcode=0x" << std::hex << (int)opcode << ", pc=0x" << (int)regs.pc << std::endl;
 
 		if((opcode & 0xC0) == 0x40) { // LD r8, r8; 0x40 ~ 0x7F

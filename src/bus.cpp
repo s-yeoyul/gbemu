@@ -1,34 +1,40 @@
 #include "gb/bus.hpp"
 #include "gb/timer.hpp"
+#include "gb/ppu.hpp"
 
 #include <fstream>
 #include <iostream>
 
 namespace gb {
-	Bus::Bus(Timer &timer) : timer_(timer) {}
+	Bus::Bus(Timer &timer, PPU &ppu, Joypad &joypad) : timer_(timer), ppu_(ppu), joypad_(joypad) {}
 
 	u8 Bus::read8(u16 addr) const {
-		/* NOTE: It is temporary solution */
-		if(addr == 0xFF44) return 0x90;
-
 		// Hooking to Timer class
 		if(addr >= 0xFF04 && addr <= 0xFF07) return timer_.read8(addr);
+
+		// Hooking to PPU class
+		if(addr >= 0xFF40 && addr <= 0xFF4B) return ppu_.read8(addr);
+
+		// Hooking to Joypad class
+		if(addr == 0xFF00) return joypad_.read8(addr);
 	
 		// Memory access
-		if(bootrom_enabled && addr <= 0x100) return bootrom_[addr];
+		if(bootrom_enabled && addr < 0x100) return bootrom_[addr];
 		else {
 			if(addr < 0x8000) return cartridge_[addr];
-			else if(addr >= 0x8000 && addr < 0xA000) return vram_[addr-0x8000];
+			else if(addr >= 0x8000 && addr < 0xA000) return ppu_.read8(addr);
 			else if(addr >= 0xC000 && addr < 0xE000) return wram_[addr-0xC000];
+			else if(addr >= 0xFE00 && addr < 0xFEA0) return ppu_.read8(addr);
 			else if(addr >= 0xFF00 && addr < 0xFF80) return ioregs_[addr-0xFF00];
 			else if(addr >= 0xFF80 && addr < 0xFFFF) return hram_[addr-0xFF80];
 			else if(addr == 0xFFFF) return intr_reg;
 			else {
-				std::cout << "invalid bootrom addr\n";
+				//std::cout << "invalid addr @0x" << std::hex << addr << "\n";
 				return 0xFF; // return -1
 			}
 		}
 	}
+
 	void Bus::write8(u16 addr, u8 value) {
 		/* NOTE: It is temporary solution */
 		if(addr == 0xFF50) {
@@ -41,6 +47,23 @@ namespace gb {
 			return;
 		}
 
+		// Hooking to PPU class
+		if(addr >= 0xFF40 && addr <= 0xFF4B) {
+			ppu_.write8(addr, value);
+
+			// OAM DMA
+			if(addr == 0xFF46) {
+				oam_dma(value);
+			}
+			return;
+		}
+
+		// Hooking to Joypad class
+		if(addr == 0xFF00) {
+			joypad_.write8(addr, value);
+			return;
+		}
+
 		if(bootrom_enabled && addr < 0x100) {
 			// bootrom_[addr] = value;
 		}
@@ -48,13 +71,14 @@ namespace gb {
 			if(addr < 0x8000) {
 				//cartridge_[addr] = value;
 			}
-			else if(addr >= 0x8000 && addr < 0xA000) vram_[addr-0x8000] = value;
+			else if(addr >= 0x8000 && addr < 0xA000) ppu_.write8(addr, value);
 			else if(addr >= 0xC000 && addr < 0xE000) wram_[addr-0xC000] = value;
+			else if(addr >= 0xFE00 && addr < 0xFEA0) ppu_.write8(addr, value);
 			else if(addr >= 0xFF00 && addr < 0xFF80) ioregs_[addr-0xFF00] = value;
 			else if(addr >= 0xFF80 && addr < 0xFFFF) hram_[addr-0xFF80] = value;
 			else if(addr == 0xFFFF) intr_reg = value;
 			else {
-				std::cout << "invalid addr@=0x" << std::hex << addr << std::endl;
+				//std::cout << "invalid addr@=0x" << std::hex << addr << std::endl;
 			}
 		}
 
@@ -72,6 +96,18 @@ namespace gb {
 		bool timer_intr = timer_.tick(cycles);
 		if(timer_intr) {
 			ioregs_[0x0F] |= 0x04;
+		}
+		
+		// 2. PPU tick
+		u8 ppu_intr = ppu_.tick(cycles);
+		if(ppu_intr != 0) {
+			ioregs_[0x0F] |= ppu_intr;
+		}
+
+		// 3. Joypad tick
+		bool joypad_intr = joypad_.tick();
+		if(joypad_intr) {
+			ioregs_[0x0F] |= 0x10;
 		}
 	}
 
@@ -103,5 +139,13 @@ namespace gb {
 		}
 		if(!ifs.read(reinterpret_cast<char*>(cartridge_.data()), size)) return false;
 		return true;
+	}
+
+	void Bus::oam_dma(u8 source) {
+		u16 base_addr = static_cast<u16>(source) << 8;
+		for(u16 i = 0; i < 0xA0; i++) {
+			u8 value = read8(base_addr + i);
+			write8(0xFE00 + i, value);
+		}
 	}
 }
