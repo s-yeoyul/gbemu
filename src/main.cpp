@@ -7,6 +7,7 @@
 #include "gb/timer.hpp"
 #include "gb/ppu.hpp"
 #include "gb/joypad.hpp"
+#include "gb/cartridge.hpp"
 
 const int CYCLES_PER_FRAME = 70224;
 const double FPS = 59.7275;
@@ -20,7 +21,9 @@ int main() {
 	gb::Timer timer;
 	gb::PPU ppu;
 	gb::Joypad joypad;
-	gb::Bus bus(timer, ppu, joypad);
+	gb::Cartridge cartridge;
+
+	gb::Bus bus(timer, ppu, joypad, cartridge);
 	gb::CPU cpu(bus);
 	cpu.reset();
 	ppu.initPPU();
@@ -103,18 +106,29 @@ int main() {
 		return 0;
 	} */
 
-	/* Game 1: Dr. Mario
+	/* Game 1: Dr. Mario (MBC0)
 	if(!bus.load_cartridge("roms/Dr. mario.gb")) {
 		std::cout << "load failed\n";
 		return 0;
 	} */
 
-	/* Game 2: Tetris */
-	if(!bus.load_cartridge("roms/Tetris.gb")) {
+	/* Game 2: Tetris (MBC0)
+	if(!cartridge.load_cartridge("roms/Tetris.gb")) {
+		std::cout << "load failed\n";
+		return 0;
+	} */
+
+	/* Game 3: Kirby's Dream Land (MBC1) */
+	if(!cartridge.load_cartridge("roms/Kirby's Dream Land.gb")) {
 		std::cout << "load failed\n";
 		return 0;
 	}
 
+	/* Game 4: Pokemon Red (MBC3)
+	if(!bus.load_cartridge("roms/pokemon_red.gb")) {
+		std::cout << "load failed\n";
+		return 0;
+	} */
 
 	auto next_frame = my_clock::now();
 
