@@ -13,18 +13,49 @@ namespace gb {
 					u32 addr_expansion;
 					if(is_bank_simple_) {
 						if(addr < 0x4000) return rom_[addr];
-						else {
+						else if(addr < 0x8000) {
 							addr_expansion = (static_cast<u32>(rom_bank_no_) << 14) + (addr - 0x4000);
+							return rom_[addr_expansion];
+						}
+						else {
+							if(ram_ena_) {
+								addr_expansion = (addr - 0xA000) + ram_bank_no_ * 0x2000;
+								return ram_[addr_expansion];
+							}
 						}
 					} else {
 						if(addr < 0x4000) {
 							addr_expansion = (ram_bank_no_ << 19) + addr;
+							return rom_[addr_expansion];
+						}
+						else if(addr < 0x8000) {
+							addr_expansion = (static_cast<u32>(rom_bank_no_) << 14) + (addr - 0x4000);
+							return rom_[addr_expansion];
 						}
 						else {
-							addr_expansion = (static_cast<u32>(rom_bank_no_) << 14) + (addr - 0x4000);
+							if(ram_ena_) {
+								addr_expansion = (addr - 0xA000) + ram_bank_no_ * 0x2000;
+								return ram_[addr_expansion];
+							}
 						}
 					}
-					return rom_[addr_expansion];
+					break;
+				}
+			case MBCType::MBC3:
+				{
+					u32 addr_expansion;
+					if(addr < 0x4000) return rom_[addr];
+					else if(addr < 0x8000) {
+						addr_expansion = (static_cast<u32>(rom_bank_no_) << 14) + (addr - 0x4000);
+						return rom_[addr_expansion];
+					}
+					else {
+						if(ram_ena_) {
+							addr_expansion = (addr - 0xA000) + ram_bank_no_ * 0x2000;
+							return ram_[addr_expansion];
+						}
+					}
+					break;
 				}
 		}
 		return 0xFF;
@@ -43,7 +74,7 @@ namespace gb {
 						ram_ena_ = false;
 					}
 					else if(addr < 0x4000) {
-						rom_bank_no_ = (value & 0x1F);
+						rom_bank_no_ = (value & 0x1F); // 5-bit
 						if(rom_bank_no_ == 0x00) rom_bank_no_ = 0x01;
 						// Mask process
 						if(rom_size_ == 256) rom_bank_no_ &= 0x0F;
@@ -56,9 +87,44 @@ namespace gb {
 					else if(addr < 0x8000) {
 						is_bank_simple_ = (value == 0x00);
 					}
+
+					if(addr >= 0xA000 && addr < 0xC000 && ram_ena_) {
+						u32 addr_expansion = (addr - 0xA000) + ram_bank_no_ * 0x2000;
+						ram_[addr_expansion] = value;
+					}
+					break;
+				}
+			case MBCType::MBC3:
+				{
+					if(addr < 0x2000 && (value & 0x0F) == 0xA) {
+						ram_ena_ = true;
+					}
+					else if(addr < 0x2000 && (value != 0x0A)) {
+						ram_ena_ = false;
+					}
+					else if(addr < 0x4000) {
+						rom_bank_no_ = (value & 0x7F); // 7-bit
+						if(rom_bank_no_ == 0x00) rom_bank_no_ = 0x01;
+					}
+					else if(addr < 0x6000) {
+						ram_bank_no_ = (value & 0x07);
+					}
+					else if(addr < 0x8000) {
+						//is_bank_simple_ = (value == 0x00);
+					}
+
+					if(addr >= 0xA000 && addr < 0xC000 && ram_ena_) {
+						u32 addr_expansion = (addr - 0xA000) + ram_bank_no_ * 0x2000;
+						ram_[addr_expansion] = value;
+					}
 					break;
 				}
 		}
+	}
+
+	bool Cartridge::is_save() {
+		if(mbc_ == MBCType::MBC3) return true;
+		return false;
 	}
 
 	bool Cartridge::load_cartridge(const std::string &path) {
@@ -78,6 +144,13 @@ namespace gb {
 			case 0x01:
 			case 0x02:
 			case 0x03: mbc_ = MBCType::MBC1;
+								 break;
+			case 0x0F:
+			case 0x10:
+			case 0x11:
+			case 0x12:
+			case 0x13:
+								 mbc_ = MBCType::MBC3;
 								 break;
 			// ...
 		}
@@ -113,6 +186,32 @@ namespace gb {
 				break;
 		}
 		std::cout << "RAM: " << ram_size_ << '\n';
+
+		std::filesystem::path p(path);
+		auto stem = p.stem();
+		path_ = stem.string();
+
+		std::cout << "Cartridge Name: " << path_ << '\n';
     return true;
+	}
+
+	bool Cartridge::load_savefile() {
+    std::ifstream ifs("saves/" + path_ + ".sav", std::ios::binary);
+    if(!ifs) return false;
+
+    ifs.seekg(0, std::ios::end);
+    std::streamsize size = ifs.tellg();
+    ifs.seekg(0, std::ios::beg);
+
+    if(!ifs.read(reinterpret_cast<char*>(ram_.data()), ram_size_ * 1024)) return false;
+		return true;
+	}
+
+	bool Cartridge::store_savefile() {
+		std::ofstream ofs("saves/" + path_ + ".sav", std::ios::binary);
+		if(!ofs) return false;
+
+		ofs.write(reinterpret_cast<const char*>(ram_.data()), ram_size_* 1024);
+		return true;
 	}
 } // namespace gb

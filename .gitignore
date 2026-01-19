@@ -13,6 +13,9 @@ cmake_install.cmake
 #*.bin
 #*.rom
 
+# Savefiles
+*.sav
+
 # tooling
 compile_commands.json
 

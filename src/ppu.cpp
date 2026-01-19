@@ -55,9 +55,36 @@ namespace gb {
 			if(e.type == SDL_QUIT) return false;
 			if(e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) return false;
 
+			if (e.type == SDL_WINDOWEVENT) {
+				if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+						e.window.event == SDL_WINDOWEVENT_MINIMIZED) {
+					joypad.set_a(false);
+					joypad.set_b(false);
+					joypad.set_start(false);
+					joypad.set_select(false);
+					joypad.set_left(false);
+					joypad.set_right(false);
+					joypad.set_up(false);
+					joypad.set_down(false);
+				}
+			}
+
+			SDL_PumpEvents();
+			const Uint8* ks = SDL_GetKeyboardState(nullptr);
+
+			joypad.set_a(ks[SDL_SCANCODE_Z] != 0);
+			joypad.set_b(ks[SDL_SCANCODE_X] != 0);
+			joypad.set_start(ks[SDL_SCANCODE_RETURN] != 0);
+			joypad.set_select(ks[SDL_SCANCODE_RSHIFT] != 0);
+
+			joypad.set_left(ks[SDL_SCANCODE_LEFT] != 0);
+			joypad.set_right(ks[SDL_SCANCODE_RIGHT] != 0);
+			joypad.set_up(ks[SDL_SCANCODE_UP] != 0);
+			joypad.set_down(ks[SDL_SCANCODE_DOWN] != 0);
+			/*
 			if(e.type == SDL_KEYDOWN && e.key.repeat == 0) {
-				if(e.key.keysym.sym == SDLK_x) joypad.set_a(true);
-				if(e.key.keysym.sym == SDLK_z) joypad.set_b(true);
+				if(e.key.keysym.sym == SDLK_z) joypad.set_a(true);
+				if(e.key.keysym.sym == SDLK_x) joypad.set_b(true);
 				if(e.key.keysym.sym == SDLK_RETURN) joypad.set_start(true);
 				if(e.key.keysym.sym == SDLK_RSHIFT) joypad.set_select(true);
 				if(e.key.keysym.sym == SDLK_LEFT) joypad.set_left(true);
@@ -67,8 +94,8 @@ namespace gb {
 			}
 
 			if (e.type == SDL_KEYUP) {
-				if(e.key.keysym.sym == SDLK_x) joypad.set_a(false);
-				if(e.key.keysym.sym == SDLK_z) joypad.set_b(false);
+				if(e.key.keysym.sym == SDLK_z) joypad.set_a(false);
+				if(e.key.keysym.sym == SDLK_x) joypad.set_b(false);
 				if(e.key.keysym.sym == SDLK_RETURN) joypad.set_start(false);
 				if(e.key.keysym.sym == SDLK_RSHIFT) joypad.set_select(false);
 				if(e.key.keysym.sym == SDLK_LEFT) joypad.set_left(false);
@@ -76,6 +103,7 @@ namespace gb {
 				if(e.key.keysym.sym == SDLK_UP) joypad.set_up(false);
 				if(e.key.keysym.sym == SDLK_DOWN) joypad.set_down(false);
 			}
+			*/
 		}
 		return true;
 	}	
@@ -190,7 +218,6 @@ namespace gb {
 												(((stat_ & 0x10) >> 4) && (mode == 1)) |
 												(((stat_ & 0x20) >> 5) && (mode == 2)) |
 												(((stat_ & 0x40) >> 6) && (ly_ == lyc_));
-
 		if(mode == 2 && dot_cycles >= 80) {
 			mode = 3; // Pixel Transfer mode
 			stat_ = (stat_ & 0xFC) | 0x3;
@@ -232,6 +259,13 @@ namespace gb {
 			}
 			if(ly_ == lyc_) stat_ |= 0x04;
 			else stat_ &= ~0x04;
+			// LCDC.7
+			if((prev_lcdc_ & 0x80) == 0x80 && (lcdc_ & 0x80) != 0x80) {
+				ly_ = 0;
+				mode = 0;
+				stat_ = (stat_ & 0xFC);
+				dot_cycles = 0;
+			}
 		}
 		
 		u8 cur_stat_line = (((stat_ & 0x08) >> 3) && (mode == 0)) |
@@ -241,7 +275,7 @@ namespace gb {
 		if(prev_stat_line == 0x0 && cur_stat_line == 0x1) {
 			intr |= 0x2;
 		}
-
+		prev_lcdc_= lcdc_;
 		return intr;
 	}
 
@@ -279,6 +313,60 @@ namespace gb {
 		std::array<u8, 160> color_bit_array{};
 
 		for(int i = 0; i < 160; i++) {
+			/* Window Rendering */
+			if((lcdc_ & 0x20) == 0x20 && wy_ <= ly_ && i >= (int)wx_ - 7) {
+				// 1. Calculate window coordinate
+				u8 w_x = (i - ((int)wx_ - 7));
+				u8 w_y = (ly_ - wy_);
+
+				// 2. Get tileID
+				u64 w_tilemap_base = (lcdc_ & 0x40) ? 0x9C00 : 0x9800;
+				u8 w_tileID = vram_[w_tilemap_base + (w_x >> 3) + ((w_y >> 3) << 5) - 0x8000];
+
+				// 3. Get tile data
+				u16 w_tiledata_addr;
+				// 3-1. $8000 Addressing
+				if((lcdc_ & 0x10) == 0x10) {
+					w_tiledata_addr = 0x8000 + w_tileID * 0x10 + ((w_y & 0x7) << 1);
+				}
+				// 3-2. $8800 Addressing
+				else {
+					s8 s_tileID = static_cast<s8>(w_tileID);
+					w_tiledata_addr = 0x9000 + s_tileID * 0x10 + ((w_y & 0x7) << 1);
+				}
+				u8 w_lo = vram_[w_tiledata_addr - 0x8000];
+				u8 w_hi = vram_[w_tiledata_addr - 0x8000 + 1];
+
+				// 4. Select color bit from each tiledata
+				u8 bit = 0x7 - (w_x & 0x7);
+				u8 color_bit = ((w_lo & (1 << bit)) >> bit) | (((w_hi & (1 << bit)) >> bit) << 1);
+
+				// 5. Fill framebuffer
+				u8 shade = (bgp_ >> (color_bit * 2)) & 0x3;
+				u64 idx = (ly_ * 160 + i) << 2;
+				u8 color;
+				color_bit_array[i] = shade;
+
+				switch(shade) {
+					case 0x00: color = 0xFF; // white
+										 break;
+					case 0x01: color = 0xAA; // light gray
+										 break;
+					case 0x02: color = 0x55; // dark gray
+										 break;
+					case 0x03: color = 0x00; // black
+										 break;
+					default: color = 0xFF;
+				}
+
+				framebuffer_[idx] = color;     // R
+				framebuffer_[idx + 1] = color; // G
+				framebuffer_[idx + 2] = color; // B
+				framebuffer_[idx + 3] = 0xFF;  // A
+
+				continue;
+			}
+			/* BG Rendering */
 			// 1. Calculate scrolled coordinate
 			u8 bg_x = (scx_ + i) & 0xFF;
 			u8 bg_y = (scy_ + ly_) & 0xFF;

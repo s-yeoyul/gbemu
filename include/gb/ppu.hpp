@@ -38,6 +38,7 @@ namespace gb {
 			std::array<u8, 0xA0> oam_{};    // 0xFE00 ~ 0xFE9F
 
 			// Registers
+			u8 prev_lcdc_ = 0;
 			u8 lcdc_ = 0;
 			u8 stat_ = 0;
 			u8 scy_ = 0; u8 scx_ = 0;

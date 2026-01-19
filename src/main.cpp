@@ -118,17 +118,22 @@ int main() {
 		return 0;
 	} */
 
-	/* Game 3: Kirby's Dream Land (MBC1) */
+	/* Game 3: Kirby's Dream Land (MBC1)
 	if(!cartridge.load_cartridge("roms/Kirby's Dream Land.gb")) {
+		std::cout << "load failed\n";
+		return 0;
+	} */
+
+	/* Game 4: Pokemon Red (MBC3) */
+	if(!cartridge.load_cartridge("roms/Pokemon Red.gb")) {
 		std::cout << "load failed\n";
 		return 0;
 	}
 
-	/* Game 4: Pokemon Red (MBC3)
-	if(!bus.load_cartridge("roms/pokemon_red.gb")) {
-		std::cout << "load failed\n";
-		return 0;
-	} */
+	// Load Save Data
+	if(cartridge.is_save()) {
+		cartridge.load_savefile();
+	}
 
 	auto next_frame = my_clock::now();
 
@@ -146,5 +151,11 @@ int main() {
     auto now = my_clock::now();
     if (now > next_frame + frame_dt) next_frame = now;
 	}
+
+	// Save data
+	if(cartridge.is_save()) {
+		cartridge.store_savefile();
+	}
+
 	return 0;
 }

@@ -24,6 +24,7 @@ namespace gb {
 		if(bootrom_enabled && addr < 0x100) return bootrom_[addr];
 		else {
 			if(addr >= 0x8000 && addr < 0xA000) return ppu_.read8(addr);
+			else if(addr >= 0xA000 && addr < 0xC000) return cartridge_.read8(addr);
 			else if(addr >= 0xC000 && addr < 0xE000) return wram_[addr-0xC000];
 			else if(addr >= 0xFE00 && addr < 0xFEA0) return ppu_.read8(addr);
 			else if(addr >= 0xFF00 && addr < 0xFF80) return ioregs_[addr-0xFF00];
@@ -73,6 +74,7 @@ namespace gb {
 				cartridge_.write8(addr, value);
 			}
 			else if(addr >= 0x8000 && addr < 0xA000) ppu_.write8(addr, value);
+			else if(addr >= 0xA000 && addr < 0xC000) cartridge_.write8(addr, value);
 			else if(addr >= 0xC000 && addr < 0xE000) wram_[addr-0xC000] = value;
 			else if(addr >= 0xFE00 && addr < 0xFEA0) ppu_.write8(addr, value);
 			else if(addr >= 0xFF00 && addr < 0xFF80) ioregs_[addr-0xFF00] = value;
